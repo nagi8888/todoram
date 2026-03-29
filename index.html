@@ -14,9 +14,17 @@
             min-height: 100vh;
             margin: 0;
             background-color: #f0f2f5;
+            padding: 20px;
         }
 
         h1 { color: #333; margin-bottom: 20px; }
+
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
 
         .roulette-container {
             position: relative;
@@ -24,7 +32,6 @@
             height: 400px;
         }
 
-        /* 針（ポインター） */
         .pointer {
             position: absolute;
             top: -20px;
@@ -45,11 +52,10 @@
         }
 
         .controls {
-            margin-top: 30px;
             text-align: center;
         }
 
-        button {
+        button#spinBtn {
             padding: 12px 30px;
             font-size: 1.2rem;
             font-weight: bold;
@@ -62,35 +68,97 @@
             box-shadow: 0 4px 0 #26af5f;
         }
 
-        button:hover { background-color: #26af5f; }
-        button:active { transform: translateY(2px); box-shadow: none; }
-        button:disabled { background-color: #ccc; box-shadow: none; cursor: not-allowed; }
+        button#spinBtn:hover { background-color: #26af5f; }
+        button#spinBtn:active { transform: translateY(2px); box-shadow: none; }
+        button#spinBtn:disabled { background-color: #ccc; box-shadow: none; cursor: not-allowed; }
 
         #result {
             margin-top: 20px;
             font-size: 1.5rem;
             font-weight: bold;
-            color: #333;
+            color: #ff4757;
             height: 2rem;
+        }
+
+        /* 都道府県選択エリア */
+        .selector-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .selector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f2f5;
+            padding-bottom: 10px;
+        }
+
+        .selector-header h3 { margin: 0; color: #333; }
+
+        .bulk-btns button {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+        }
+
+        .bulk-btns button:hover { background: #f0f2f5; }
+
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 100px));
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .checkbox-item {
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <h1>🗾 47都道府県ルーレット</h1>
+    <h1>🗾 都道府県ルーレット（除外機能つき）</h1>
 
-    <div class="roulette-container">
-        <div class="pointer"></div>
-        <canvas id="wheel" width="400" height="400"></canvas>
-    </div>
+    <div class="main-container">
+        
+        <div class="roulette-container">
+            <div class="pointer"></div>
+            <canvas id="wheel" width="400" height="400"></canvas>
+        </div>
 
-    <div class="controls">
-        <button id="spinBtn">ルーレットを回す！</button>
-        <div id="result"></div>
+        <div class="controls">
+            <button id="spinBtn">ルーレットを回す！</button>
+            <div id="result"></div>
+        </div>
+
+        <div class="selector-container">
+            <div class="selector-header">
+                <h3>抽選に含める都道府県</h3>
+                <div class="bulk-btns">
+                    <button id="selectAll">全選択</button>
+                    <button id="deselectAll">全解除</button>
+                </div>
+            </div>
+            <div class="checkbox-grid" id="checkboxGrid"></div>
+        </div>
+
     </div>
 
     <script>
-        const prefectures = [
+        const allPrefectures = [
             "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
             "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県",
             "新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県",
@@ -100,30 +168,76 @@
             "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
         ];
 
+        // 現在有効な都道府県のリスト
+        let activePrefectures = [...allPrefectures];
+
         const canvas = document.getElementById('wheel');
         const ctx = canvas.getContext('2d');
         const spinBtn = document.getElementById('spinBtn');
         const resultDisplay = document.getElementById('result');
+        const grid = document.getElementById('checkboxGrid');
 
-        const numSegments = prefectures.length;
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
         const radius = canvas.width / 2;
-        const segmentAngle = (2 * Math.PI) / numSegments;
-
         let currentRotation = 0;
+
+        // チェックボックスの生成
+        allPrefectures.forEach((pref, index) => {
+            const label = document.createElement('label');
+            label.className = 'checkbox-item';
+            label.innerHTML = `<input type="checkbox" value="${pref}" checked> ${pref}`;
+            grid.appendChild(label);
+            
+            // チェックボックス変更イベント
+            label.querySelector('input').addEventListener('change', updateActivePrefectures);
+        });
+
+        // 有効な都道府県リストの更新と再描画
+        function updateActivePrefectures() {
+            const checkboxes = grid.querySelectorAll('input[type="checkbox"]');
+            activePrefectures = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) activePrefectures.push(cb.value);
+            });
+
+            // 0個になったら回せないようにする
+            if (activePrefectures.length === 0) {
+                spinBtn.disabled = true;
+                spinBtn.textContent = "都道府県を選んでください";
+            } else {
+                spinBtn.disabled = false;
+                spinBtn.textContent = "ルーレットを回す！";
+            }
+
+            drawWheel();
+        }
 
         // ホイールを描画
         function drawWheel() {
-            prefectures.forEach((name, i) => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const numSegments = activePrefectures.length;
+            const segmentAngle = (2 * Math.PI) / numSegments;
+
+            if (numSegments === 0) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#e4e7eb';
+                ctx.fill();
+                return;
+            }
+
+            activePrefectures.forEach((name, i) => {
                 const angle = i * segmentAngle;
                 
-                // セグメントの背景色
+                // パイ（扇形）の描画
                 ctx.beginPath();
                 ctx.moveTo(centerX, centerY);
                 ctx.arc(centerX, centerY, radius, angle, angle + segmentAngle);
-                ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f1f2f6'; // 交互に色を変える
+                ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f1f2f6'; 
                 ctx.fill();
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
                 ctx.stroke();
 
                 // テキストの描画
@@ -132,38 +246,55 @@
                 ctx.rotate(angle + segmentAngle / 2);
                 ctx.textAlign = "right";
                 ctx.fillStyle = "#333";
-                ctx.font = "10px sans-serif";
+                
+                // 都道府県の数によって文字サイズを微調整
+                let fontSize = 10;
+                if (numSegments < 10) fontSize = 16;
+                else if (numSegments < 25) fontSize = 12;
+                
+                ctx.font = `bold ${fontSize}px sans-serif`;
                 ctx.fillText(name, radius - 10, 5);
                 ctx.restore();
             });
         }
 
+        // 初期描画
         drawWheel();
 
+        // ルーレット回転処理
         spinBtn.addEventListener('click', () => {
-            if (spinBtn.disabled) return;
+            if (activePrefectures.length === 0) return;
             
             spinBtn.disabled = true;
             resultDisplay.textContent = "抽選中...";
 
-            // 回転数をランダムに決定（最低5回転 + ランダム）
+            const numSegments = activePrefectures.length;
             const extraDegrees = Math.floor(Math.random() * 360);
-            const totalRotation = 3600 + extraDegrees; // 10回転以上
+            const totalRotation = 3600 + extraDegrees; // 最低10回転
             
             currentRotation += totalRotation;
             canvas.style.transform = `rotate(${currentRotation}deg)`;
 
-            // アニメーション終了後に結果を表示（4秒後）
             setTimeout(() => {
                 spinBtn.disabled = false;
                 
-                // 現在の角度から当選した都道府県を計算
-                // 針は真上(-90度)にあるので、その位置を基準にする
+                // 停止位置から当選を計算
                 const actualDegrees = currentRotation % 360;
+                // Canvasの針は真上（-90度 = 270度）にあるため、そこから逆算
                 const winningIndex = Math.floor((numSegments - (actualDegrees / 360) * numSegments + (numSegments * 0.75)) % numSegments);
                 
-                resultDisplay.textContent = `結果：${prefectures[winningIndex]}`;
+                resultDisplay.textContent = `結果：${activePrefectures[winningIndex]}`;
             }, 4000);
+        });
+
+        // 全選択・全解除ボタンの処理
+        document.getElementById('selectAll').addEventListener('click', () => {
+            grid.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+            updateActivePrefectures();
+        });
+        document.getElementById('deselectAll').addEventListener('click', () => {
+            grid.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            updateActivePrefectures();
         });
     </script>
 </body>
